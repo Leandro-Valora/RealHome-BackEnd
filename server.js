@@ -1,7 +1,6 @@
 import express, { json, query } from "express";
 import { createConnection } from "mysql";
 import cors from "cors";
-import nodemailer from 'nodemailer';  //utilizza il protocollo SMTP di Google
 import bodyParser from "body-parser";
 
 const app = express();
@@ -49,6 +48,8 @@ app.post('/login', (req, res) => {
                 "FROM Agente WHERE Agente.Email = ? AND Agente.Password = ? ;" ;
     const values = [req.body.email, req.body.password, req.body.email, req.body.password, req.body.email, req.body.password];
 
+    console.log("email: " + req.body.email);
+    console.log("password: " + req.body.password);
     db.query(sql, values, (err, data) => { 
         if(err) {
             return res.json("Error");
@@ -222,6 +223,29 @@ app.post('/info/recive-email', (req, res) => {
         }
     })
 });
+
+
+//cancella messaggi da lista contatti
+app.post('/info/DeleteEmail', (req, res) => {
+    const sql = "DELETE FROM Contatto WHERE Id_contatto = ? ;";
+    const value = req.body.Id_contatto;
+
+    console.log("id del contatto: " + value);
+    db.query(sql, value, (err, data) => { 
+        if(err) {
+            return res.json("Error");
+        }
+        if(data.affectedRows > 0) {
+            return res.json({ 
+                status: "Success",
+                message: "Contatto deleted"
+            });
+        } else {
+            return res.json({ status: "Failed", message: "No records found" });
+        }
+    })
+});
+
 
 //lista User
 app.post('/admin/listaUser', (req, res) => {
@@ -407,31 +431,39 @@ app.post('/admin/crudAdmin/modificaCasa', (req, res) => {
 });
 
 
-//elimina casa, con immagini relative
+//elimina casa, con immagini relative e messaggio del venditore
 app.post('/admin/CasaDelete', (req, res) => {
-    const sql = "DELETE FROM Casa WHERE Casa.Id_casa = ? ; DELETE FROM Immagini_casa WHERE Id_casa = ? ; DELETE FROM CasaVenduta WHERE Id_casa = ? ; ";
-    const values = [req.body.Id_casa, req.body.Id_casa, req.body.Id_casa];
+    const id_casa = req.body.Id_casa;
 
-    db.query(sql, values, (err, result) => { 
-        if(err) {
-            return res.json({ status: "Error", message: "Database error" });
-        }
-        if(result.affectedRows > 0) {
-            return res.json({ 
-                status: "Success", 
-                message: "Casa deleted successfully"
-            });
-        } else {
-            return res.json({ status: "Failed", message: "No records found" });
-        }
-    })
+    const deleteQueries = [
+        "DELETE FROM Immagini_casa WHERE Id_casa = ?",
+        "DELETE FROM CasaVenduta WHERE Id_casa = ?",
+        "DELETE FROM Casa WHERE Casa.Id_casa = ?"
+    ];
+
+    deleteQueries.forEach((sql, index) => {
+        db.query(sql, id_casa, (err, result) => {
+            if(err) {
+                return res.json({ status: "Error", message: "Database error" });
+            }
+            if(index === deleteQueries.length - 1 && result.affectedRows > 0) {
+                return res.json({ 
+                    status: "Success", 
+                    message: "Casa deleted successfully"
+                });
+            } else if (index === deleteQueries.length - 1) {
+                return res.json({ status: "Failed", message: "No records found" });
+            }
+        });
+    });
 });
+
 
 
 //elimina singole immagini casa 
 app.post('/admin/ImageDelete', (req, res) => {
-    const sql = "DELETE FROM Immagini_casa WHERE Id_casa = ? ;";
-    const values = req.body.Id_casa;
+    const sql = "DELETE FROM Immagini_casa WHERE Id_immagine = ? ;";
+    const values = req.body.Id_immagine;
 
     db.query(sql, values, (err, result) => { 
         if(err) {
@@ -543,8 +575,8 @@ app.post('/admin/listaAgente', (req, res) => {
 
 //nuovo Agente Imm.
 app.post('/admin/crudAdmin/createAgente', (req, res) => {
-    const sql = "INSERT INTO Agente (Nome, Cognome, Email, Numero_cell) VALUES (?, ?, ?, ?) ;";
-    const values = [req.body.nome, req.body.cognome, req.body.email, req.body.numero_cell];
+    const sql = "INSERT INTO Agente (Nome, Cognome, Email, Password, Numero_cell) VALUES (?, ?, ?, ?, ?) ;";
+    const values = [req.body.nome, req.body.cognome, req.body.email, req.body.password, req.body.numero_cell];
 
     db.query(sql, values, (err, data) => { 
         if(err) {
@@ -565,8 +597,8 @@ app.post('/admin/crudAdmin/createAgente', (req, res) => {
 
 //modifica singolo agente
 app.post('/admin/crudAdmin/modificaAgente', (req, res) => {
-    const sql = "UPDATE Agente SET Agente.Nome = ?, Agente.Cognome = ?, Agente.Email = ?, Agente.Numero_cell = ? WHERE Agente.Id_agente = ? ;";
-    const values = [req.body.Nome, req.body.Cognome, req.body.Email, req.body.Numero_cell, req.body.Id_agente];
+    const sql = "UPDATE Agente SET Agente.Nome = ?, Agente.Cognome = ?, Agente.Email = ?, Agente.Password = ?, Agente.Numero_cell = ? WHERE Agente.Id_agente = ? ;";
+    const values = [req.body.Nome, req.body.Cognome, req.body.Email, req.body.Password, req.body.Numero_cell, req.body.Id_agente];
 
     console.log("sono dentro con : " + req.body.Nome);
     db.query(sql, values, (err, data) => { 
@@ -585,26 +617,32 @@ app.post('/admin/crudAdmin/modificaAgente', (req, res) => {
     })
 });
 
-//elimina agente Imm.
+//elimina agente Imm. e le sue email
 app.post('/admin/AgenteDelete', (req, res) => {
-    const sql = "DELETE FROM Agente WHERE Agente.Id_agente = ? ;";
-    const values = req.body.Id_agente;
-    console.log("Sono dentro con id: " + req.body.Id_agente);
+    const id_agente = req.body.Id_agente;
 
-    db.query(sql, values, (err, result) => { 
-        if(err) {
-            return res.json({ status: "Error", message: "Database error" });
-        }
-        if(result.affectedRows > 0) {
-            return res.json({ 
-                status: "Success", 
-                message: "Agente deleted successfully"
-            });
-        } else {
-            return res.json({ status: "Failed", message: "No records found" });
-        }
-    })
+    const deleteQueries = [
+        "DELETE FROM Agente WHERE Agente.Id_agente = ?",
+        "DELETE FROM ScambioEmail WHERE ScambioEmail.Id_agente = ?"
+    ];
+
+    deleteQueries.forEach((sql, index) => {
+        db.query(sql, id_agente, (err, result) => {
+            if(err) {
+                return res.json({ status: "Error", message: "Database error" });
+            }
+            if(index === deleteQueries.length - 1 && result.affectedRows > 0) {
+                return res.json({ 
+                    status: "Success", 
+                    message: "Agente deleted successfully"
+                });
+            } else if (index === deleteQueries.length - 1) {
+                return res.json({ status: "Failed", message: "No records found" });
+            }
+        });
+    });
 });
+
 
 //dettaglli singolo agente Imm.
 app.get('/admin/getAgenteDetails', (req, res) => {
@@ -795,7 +833,7 @@ app.post('/Client/ricercaCase', (req, res) => {
 app.post('/Client/ricercaTuttiCampi', (req, res) => {
     const sql = "SELECT Casa.Id_casa, Casa.Nome, Propietario.Cognome AS Propietario, Casa.AgenteImm AS IdAgente, Agente.Cognome AS CognomeAgente, " + 
     "Casa.Paese, Casa.Citta, Casa.ImageURL, " +
-    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(10,6)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
+    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(9,1)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
     "WHERE Casa.Paese LIKE ? AND Casa.Citta LIKE ? AND (Casa.Prezzo <= ?) ;" ;
     const values = ["%"+req.body.Paese+"%", "%"+req.body.Citta+"%", req.body.Prezzo];
 
@@ -819,7 +857,7 @@ app.post('/Client/ricercaTuttiCampi', (req, res) => {
 app.post('/Client/ricercaCasexPaesePrezzo', (req, res) => {
     const sql = "SELECT Casa.Id_casa, Casa.Nome, Propietario.Cognome AS Propietario, Casa.AgenteImm AS IdAgente, Agente.Cognome AS CognomeAgente, " + 
     "Casa.Paese, Casa.Citta, Casa.ImageURL, " +
-    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(10,6)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
+    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(9,1)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
     "WHERE Casa.Paese LIKE ? AND (Casa.Prezzo <= ?) ;" ;
     const values = ["%"+req.body.Paese+"%",req.body.Prezzo];
 
@@ -844,7 +882,7 @@ app.post('/Client/ricercaCasexPaesePrezzo', (req, res) => {
 app.post('/Client/ricercaCasexCittaPrezzo', (req, res) => {
     const sql = "SELECT Casa.Id_casa, Casa.Nome, Propietario.Cognome AS Propietario, Casa.AgenteImm AS IdAgente, Agente.Cognome AS CognomeAgente, " + 
     "Casa.Paese, Casa.Citta, Casa.ImageURL, " +
-    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(10,6)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
+    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(9,1)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
     "WHERE Casa.Citta LIKE ? AND (Casa.Prezzo <= ?) ;" ;
     const values = ["%"+req.body.Citta+"%",req.body.Prezzo];
 
@@ -916,7 +954,7 @@ app.post('/Client/ricercaCasexCitta', (req, res) => {
 app.post('/Client/ricercaCasexPrezzo', (req, res) => {
     const sql = "SELECT Casa.Id_casa, Casa.Nome, Propietario.Cognome AS Propietario, Casa.AgenteImm AS IdAgente, Agente.Cognome AS CognomeAgente, " + 
     "Casa.Paese, Casa.Citta, Casa.ImageURL, " +
-    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(10,6)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
+    "Casa.Via, Casa.Descrizione, CAST(Casa.Prezzo AS DECIMAL(9,1)) AS Prezzo FROM Casa INNER JOIN Propietario ON Casa.PropietarioIm = " + "Propietario.Id_propietario INNER JOIN Agente ON Casa.AgenteImm = Agente.Id_agente " + 
     "WHERE (Casa.Prezzo <= ?) ;" ;
     const values = [req.body.Prezzo];
 
@@ -1183,6 +1221,77 @@ app.post('/admin/DeleteCasaVenduta', (req, res) => {
     })
 });
 
+
+//vedo messaggi dell'agente nella pagina del client
+app.post('/Client/recive-email', (req, res) => {
+    const sql = "SELECT ScambioEmail.Id_email, ScambioEmail.Data_messaggio, "+ "ScambioEmail.Titolo, " +
+    "ScambioEmail.Descrizione_email, Agente.Nome, Agente.Cognome, Agente.Email "+ 
+    "FROM ScambioEmail INNER JOIN Agente ON Agente.Id_agente = " + "ScambioEmail.Id_agente " +
+    "WHERE ScambioEmail.Email_richiedente = ? ;";
+    const value = req.body.Email_richiedente;
+    
+    db.query(sql, value, (err, data) => { 
+        if(err) {
+            return res.json("Error");
+        }
+        if(data.length > 0) {
+            // Prendi solo la prima riga dei risultati
+            const firstMessage = data[0];
+            return res.json({ 
+                status: "Success", 
+                numRecord: data.length, 
+                emails: data
+            });
+        } else {
+            return res.json({ status: "Failed", message: "No records found" });
+        }
+    })
+});
+
+
+//cancella messaggi dell'agente nella pagina client
+app.post('/Client/DeleteEmail', (req, res) => {
+    const sql = "DELETE FROM ScambioEmail WHERE Id_email = ? ;";
+    const value = req.body.Id_email;
+
+    console.log("id delete email: " + value);
+    db.query(sql, value, (err, data) => { 
+        if(err) {
+            return res.json("Error");
+        }
+        if(data.affectedRows > 0) {
+            return res.json({ 
+                status: "Success",
+                message: "Contatto deleted"
+            });
+        } else {
+            return res.json({ status: "Failed", message: "No records found" });
+        }
+    })
+});
+
+
+//nuovo messaggio da agente a client
+app.post('/agente/createMessageAgent', (req, res) => {
+    const sql = "INSERT INTO ScambioEmail (Email_richiedente, Id_agente, Titolo, Descrizione_email) VALUE (?, ?, ?, ?); ";
+    const values = [req.body.Email_richiedente, req.body.Id_agente, req.body.Titolo, req.body.Descrizione_email];
+
+    db.query(sql, values, (err, data) => { 
+        if(err) {
+            return res.status(500).json({ status: "Error", message: "Internal server error" });
+        }
+        if(data.affectedRows > 0) {
+            // Inserimento riuscito
+            return res.status(200).json({ 
+                status: "Success",
+                message: "ScambioEmail created"
+            });
+        } else {
+            // Nessun record inserito
+            return res.status(404).json({ status: "Failed", message: "No records inserted" });
+        }
+    })
+});
 
 
 
